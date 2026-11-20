@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kidney risk calculator: eGFR, KDIGO stage and kidney failure risk</title>
+<meta name="description" content="Race-free CKD-EPI 2021 eGFR, KDIGO CKD staging and the 4-variable Kidney Failure Risk Equation, calculated in your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%230e7c86%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-size=%2216%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22 font-weight=%22700%22%3EG%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef2f4;
+    --panel: #ffffff;
+    --ink: #1c2b36;
+    --muted: #5b6b77;
+    --line: #d5dde3;
+    --accent: #0e7c86;
+    --low: #6fb37a;
+    --moderate: #e9c46a;
+    --high: #e08a3c;
+    --very-high: #b5452f;
+    --radius-input: 6px;
+    --radius-pad: 10px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 400 16px/1.5 "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 20px 48px; }
+  header h1 {
+    font: 600 clamp(28px, 4vw, 40px)/1.1 "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
+    letter-spacing: -0.01em; margin: 0 0 8px;
+  }
+  header p { margin: 0; color: var(--muted); max-width: 64ch; }
+  .layout { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 28px; margin-top: 28px; align-items: start; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+  /* ---- Inputs ---- */
+  form { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  fieldset { border: 0; padding: 0; margin: 0 0 18px; }
+  legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
+  .field { margin-bottom: 14px; }
+  label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  .row { display: flex; gap: 8px; }
+  input[type=number], select {
+    font: inherit; color: var(--ink); background: #fff; border: 1px solid var(--line);
+    border-radius: var(--radius-input); padding: 8px 10px; width: 100%; min-height: 40px;
+  }
+  .row select { width: auto; flex: 0 0 auto; }
+  input:focus-visible, select:focus-visible, button:focus-visible, .seg input:focus-visible + span {
+    outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px;
+  }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-input); overflow: hidden; }
+  .seg label { margin: 0; color: var(--ink); font-size: 15px; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { display: block; padding: 8px 14px; cursor: pointer; min-height: 40px; }
+  .seg input:checked + span { background: var(--accent); color: #fff; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .error { color: #a33a26; font-size: 14px; margin-top: 6px; min-height: 1.2em; }
+
+  /* ---- Results ---- */
+  .results { display: grid; gap: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+  .card h2 { font-size: 17px; font-weight: 600; margin: 0 0 14px; }
+  .egfr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+  .egfr .value {
+    font: 600 clamp(56px, 9vw, 88px)/0.95 "IBM Plex Sans Condensed", sans-serif;
+    font-variant-numeric: tabular-nums; color: var(--ink);
+  }
+  .egfr .unit { color: var(--muted); }
+  .egfr .stage { font-weight: 600; font-size: 18px; flex-basis: 100%; }
+  table.eq { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; font-variant-numeric: tabular-nums; }
+  table.eq td { padding: 6px 0; border-top: 1px solid var(--line); }
+  table.eq td:last-child { text-align: right; }
+  table.eq tr.used td { font-weight: 600; }
+
+  /* KDIGO heat map styled as reagent pads */
+  .kdigo { display: grid; grid-template-columns: auto repeat(3, 1fr); gap: 6px; font-size: 13px; }
+  .kdigo .col-h, .kdigo .row-h { color: var(--muted); display: flex; align-items: center; }
+  .kdigo .col-h { justify-content: center; text-align: center; padding-bottom: 2px; }
+  .kdigo .row-h { padding-right: 8px; white-space: nowrap; }
+  .pad {
+    border-radius: var(--radius-pad); min-height: 40px; display: flex; align-items: center; justify-content: center;
+    color: var(--ink); font-weight: 500; text-align: center; padding: 2px 4px;
+    background: color-mix(in srgb, var(--c) 30%, #fff); transition: background 200ms, transform 200ms, box-shadow 200ms;
+  }
+  .pad[data-risk="Low"] { --c: var(--low); }
+  .pad[data-risk="Moderate"] { --c: var(--moderate); }
+  .pad[data-risk="High"] { --c: var(--high); }
+  .pad[data-risk="Very high"] { --c: var(--very-high); }
+  .pad.here { background: var(--c); font-weight: 600; transform: scale(1.06); box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--ink); }
+  .pad.here[data-risk="Very high"] { color: #fff; }
+  @media (max-width: 480px) { .kdigo { font-size: 12px; gap: 4px; } }
+  @media (prefers-reduced-motion: reduce) { .pad { transition: none; } .pad.here { transform: none; } }
+  .kdigo-note { margin: 12px 0 0; font-size: 14px; color: var(--muted); }
+
+  /* KFRE bars */
+  .bar-row { display: grid; grid-template-columns: 70px 1fr 64px; align-items: center; gap: 12px; margin: 10px 0; }
+  .bar { position: relative; height: 22px; background: #e6ebef; border-radius: 4px; overflow: visible; }
+  .bar .fill { height: 100%; border-radius: 4px; background: var(--accent); width: 0; transition: width 250ms; }
+  @media (prefers-reduced-motion: reduce) { .bar .fill { transition: none; } }
+  .bar .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); }
+  .bar-row .pct { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .scale-note { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .flag { margin-top: 12px; font-size: 14px; padding: 10px 12px; border-radius: 8px; background: #fff4e5; display: none; }
+  .flag.show { display: block; }
+
+  footer { margin-top: 32px; font-size: 14px; color: var(--muted); max-width: 80ch; }
+  footer a { color: var(--accent); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Kidney risk calculator</h1>
+    <p>Race-free CKD-EPI 2021 eGFR, KDIGO stage and the Kidney Failure Risk Equation. Results update as you type.
+      Everything is calculated in your browser, and nothing you enter is sent anywhere.</p>
+  </header>
+
+  <div class="layout">
+    <form id="f" novalidate aria-describedby="err">
+      <fieldset>
+        <legend>Patient</legend>
+        <div class="field">
+          <label for="age">Age (years)</label>
+          <input id="age" type="number" inputmode="decimal" min="18" max="110" value="67">
+        </div>
+        <div class="field">
+          <span id="sex-l" class="sr-only">Sex</span>
+          <div class="seg" role="radiogroup" aria-labelledby="sex-l">
+            <label><input type="radio" name="sex" value="female"><span>Female</span></label>
+            <label><input type="radio" name="sex" value="male" checked><span>Male</span></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Blood tests</legend>
+        <div class="field">
+          <label for="scr">Serum creatinine</label>
+          <div class="row">
+            <input id="scr" type="number" inputmode="decimal" step="0.01" min="0" value="2.1">
+            <select id="scrUnit" aria-label="Creatinine unit"><option value="mg/dL">mg/dL</option><option value="umol/L">µmol/L</option></select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="scys">Cystatin C, mg/L (optional)</label>
+          <input id="scys" type="number" inputmode="decimal" step="0.01" min="0" placeholder="Leave blank if not measured">
+          <div class="hint">If entered, the combined creatinine–cystatin C equation is used for staging.</div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Urine</legend>
+        <div class="field">
+          <label for="acr">Albumin-to-creatinine ratio</label>
+          <div class="row">
+            <input id="acr" type="number" inputmode="decimal" step="0.1" min="0" value="450">
+            <select id="acrUnit" aria-label="ACR unit"><option value="mg/g">mg/g</option><option value="mg/mmol">mg/mmol</option></select>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Kidney failure risk calibration</legend>
+        <select id="region" aria-label="KFRE calibration">
+          <option value="non_north_american">Outside North America</option>
+          <option value="north_american">North America (US, Canada)</option>
+        </select>
+      </fieldset>
+      <div id="err" class="error" role="alert"></div>
+    </form>
+
+    <div class="results" aria-live="polite">
+      <section class="card" aria-labelledby="h-egfr">
+        <h2 id="h-egfr">Estimated GFR</h2>
+        <div class="egfr">
+          <span class="value" id="egfrValue">–</span>
+          <span class="unit">mL/min/1.73 m²</span>
+          <span class="stage" id="egfrStage"></span>
+        </div>
+        <table class="eq" aria-label="eGFR by equation">
+          <tbody>
+            <tr id="r-cr"><td>CKD-EPI 2021, creatinine</td><td id="v-cr">–</td></tr>
+            <tr id="r-cys"><td>CKD-EPI 2012, cystatin C</td><td id="v-cys">–</td></tr>
+            <tr id="r-crcys"><td>CKD-EPI 2021, creatinine–cystatin C</td><td id="v-crcys">–</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card" aria-labelledby="h-kdigo">
+        <h2 id="h-kdigo">KDIGO stage and prognosis</h2>
+        <div class="kdigo" id="kdigo" role="img" aria-label="KDIGO heat map"></div>
+        <p class="kdigo-note" id="kdigoNote"></p>
+      </section>
+
+      <section class="card" aria-labelledby="h-kfre">
+        <h2 id="h-kfre">Risk of kidney failure needing dialysis or transplant</h2>
+        <div class="bar-row"><span>2 years</span><div class="bar"><div class="fill" id="b2"></div><div class="tick" id="t2"></div></div><span class="pct" id="p2">–</span></div>
+        <div class="bar-row"><span>5 years</span><div class="bar"><div class="fill" id="b5"></div><div class="tick" id="t5"></div></div><span class="pct" id="p5">–</span></div>
+        <p class="scale-note">Bars run from 0% to 50%. The black mark is the 5% five-year risk at which NICE recommends nephrology referral (shown on the 5-year bar).</p>
+        <div class="flag" id="flag"></div>
+      </section>
+    </div>
+  </div>
+
+  <footer>
+    <p>Equations: Inker et al., NEJM 2021 and 2012; KDIGO 2024 CKD guideline; Tangri et al., JAMA 2011 and 2016.
+      The calculations are a direct port of the tested Python package
+      <a href="https://github.com/alirezajavan-sys/ckd-toolkit">ckd-toolkit</a> and are checked against it on every
+      change (<a href="https://github.com/alirezajavan-sys/kidney-risk-calculator">source code</a>).</p>
+    <p>For adults only. For education and research; not a substitute for clinical judgement. A CKD diagnosis also
+      needs abnormalities lasting more than 3 months.</p>
+  </footer>
+</div>
+
+<script type="module">
+import {
+  egfrCreatinine, egfrCystatin, egfrCreatinineCystatin, gfrCategory, albuminuriaCategory, kdigoRisk, kfre,
+  GFR_CATEGORIES, ALBUMINURIA_CATEGORIES,
+} from "./calc.js";
+
+const $ = (id) => document.getElementById(id);
+const G = ["G1", "G2", "G3a", "G3b", "G4", "G5"];
+const A = ["A1", "A2", "A3"];
+const G_RANGE = { G1: "≥90", G2: "60–89", G3a: "45–59", G3b: "30–44", G4: "15–29", G5: "<15" };
+const A_RANGE = { A1: "<30 mg/g", A2: "30–300", A3: ">300" };
+const BAR_MAX = 0.5;
+
+// Build the heat map once.
+const grid = $("kdigo");
+grid.append(Object.assign(document.createElement("div"), { className: "col-h", textContent: "" }));
+for (const a of A) grid.append(Object.assign(document.createElement("div"), { className: "col-h", textContent: `${a} ${A_RANGE[a]}` }));
+for (const g of G) {
+  grid.append(Object.assign(document.createElement("div"), { className: "row-h", textContent: `${g} ${G_RANGE[g]}` }));
+  for (const a of A) {
+    const pad = document.createElement("div");
+    pad.className = "pad"; pad.dataset.cell = g + a; pad.dataset.risk = kdigoRisk(g, a); pad.textContent = kdigoRisk(g, a);
+    grid.append(pad);
+  }
+}
+
+const num = (id) => { const v = $(id).value.trim(); return v === "" ? null : Number(v); };
+const fmt = (x) => (x >= 100 ? x.toFixed(0) : x.toFixed(1));
+const pct = (p) => (p < 0.001 ? "<0.1%" : (100 * p).toFixed(1) + "%");
+
+function render() {
+  $("err").textContent = "";
+  const age = num("age"), scr = num("scr"), scys = num("scys"), acr = num("acr");
+  const sex = document.querySelector("input[name=sex]:checked").value;
+  const unit = $("scrUnit").value, acrUnit = $("acrUnit").value, region = $("region").value;
+  try {
+    if (age === null || scr === null) throw new Error("Enter age and serum creatinine to see results.");
+    const cr = egfrCreatinine(scr, age, sex, unit);
+    const cys = scys ? egfrCystatin(scys, age, sex) : null;
+    const crcys = scys ? egfrCreatinineCystatin(scr, scys, age, sex, unit) : null;
+    const best = crcys ?? cr;
+    $("egfrValue").textContent = Math.round(best);
+    $("v-cr").textContent = fmt(cr);
+    $("v-cys").textContent = cys ? fmt(cys) : "not entered";
+    $("v-crcys").textContent = crcys ? fmt(crcys) : "not entered";
+    for (const [row, on] of [["r-cr", !crcys], ["r-crcys", !!crcys], ["r-cys", false]]) $(row).classList.toggle("used", on);
+    const g = gfrCategory(best);
+    $("egfrStage").textContent = `${g}: ${GFR_CATEGORIES[g]}`;
+
+    document.querySelectorAll(".pad").forEach((p) => p.classList.remove("here"));
+    if (acr === null || acr <= 0) {
+      $("kdigoNote").textContent = "Enter the urine albumin-to-creatinine ratio to place the patient on the heat map and estimate kidney failure risk.";
+      for (const k of ["2", "5"]) { $("b" + k).style.width = "0"; $("p" + k).textContent = "–"; }
+      $("flag").classList.remove("show");
+      return;
+    }
+    const a = albuminuriaCategory(acr, acrUnit);
+    const risk = kdigoRisk(g, a);
+    document.querySelector(`.pad[data-cell="${g}${a}"]`).classList.add("here");
+    $("kdigoNote").textContent = `${g}${a}: ${ALBUMINURIA_CATEGORIES[a].toLowerCase()} albuminuria. KDIGO prognosis: ${risk.toLowerCase()} risk.`;
+
+    for (const yrs of [2, 5]) {
+      const p = kfre(age, sex, best, acr, { acrUnit, years: yrs, region });
+      $("b" + yrs).style.width = Math.min(100, (100 * p) / BAR_MAX) + "%";
+      $("p" + yrs).textContent = pct(p);
+    }
+    $("t5").style.left = `calc(${(100 * 0.05) / BAR_MAX}% - 1px)`;
+    $("t2").style.display = "none";
+    const flag = $("flag");
+    if (best >= 60) {
+      flag.textContent = "The Kidney Failure Risk Equation was developed for eGFR below 60. Interpret this estimate with caution.";
+      flag.classList.add("show");
+    } else {
+      flag.classList.remove("show");
+    }
+  } catch (e) {
+    $("err").textContent = e.message;
+  }
+}
+
+$("f").addEventListener("input", render);
+$("f").addEventListener("submit", (e) => e.preventDefault());
+render();
+</script>
+</body>
+</html>
